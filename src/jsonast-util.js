@@ -161,6 +161,78 @@ const unescapePointerSegment = (segment) => segment.toString().replace(/~1/g, "/
 /** @type (segment: string) => string */
 const escapePointerSegment = (segment) => segment.toString().replace(/~/g, "~0").replace(/\//g, "~1");
 
+/** @type <T>(key: string, node: JsonObjectNode<T>) => boolean */
+export const jsonObjectHas = (key, node) => {
+  for (const property of node.children) {
+    if (property.children[0].value === key) {
+      return true;
+    }
+  }
+
+  return false;
+};
+
+/** @type <T>(node: JsonObjectNode<T>) => string[] */
+export const jsonObjectKeys = (node) => {
+  return node.children.map((propertyNode) => propertyNode.children[0].value);
+};
+
+/**
+ * @overload
+ * @param {JsonObjectNode<any>} node
+ * @returns {JsonObject}
+ *
+ * @overload
+ * @param {JsonArrayNode<any>} node
+ * @returns {JsonArray}
+ *
+ * @overload
+ * @param {JsonStringNode} node
+ * @returns {string}
+ *
+ * @overload
+ * @param {JsonNumberNode} node
+ * @returns {number}
+ *
+ * @overload
+ * @param {JsonBooleanNode} node
+ * @returns {boolean}
+ *
+ * @overload
+ * @param {JsonNullNode} node
+ * @returns {null}
+ *
+ * @overload
+ * @param {SchemaNode} node
+ * @returns {Json}
+ *
+ * @param {SchemaNode} node
+ * @returns {Json}
+ */
+export const jsonValue = (node) => {
+  if (node.type === "json-schema-reference") {
+    return node.value;
+  }
+
+  switch (node.jsonType) {
+    case "object":
+      /** @type JsonObject */
+      const object = {};
+      for (const propertyNode of node.children) {
+        const [keyNode, valueNode] = propertyNode.children;
+        object[keyNode.value] = jsonValue(valueNode);
+      }
+      return object;
+    case "array":
+      return node.children.map(jsonValue);
+    case "string":
+    case "number":
+    case "boolean":
+    case "null":
+      return node.value;
+  }
+};
+
 /**
  * @overload
  * @param {SchemaNode} node
