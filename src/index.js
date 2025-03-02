@@ -1,5 +1,8 @@
+import { parseIriReference, toAbsoluteIri } from "@hyperjump/uri";
 import {
+  assertNodeType,
   toJsonNode,
+  jsonPointerGet,
   toSchemaNode
 } from "./jsonast-util.js";
 
@@ -61,3 +64,18 @@ export const registerSchema = (schema, uri) => {
 
 /** @type Map<string, KeywordHandler> */
 const keywordHandlers = new Map();
+
+keywordHandlers.set("$ref", (refNode, instanceNode) => {
+  assertNodeType(refNode, "reference");
+  const pointer = decodeURI(parseIriReference(refNode.value).fragment ?? "");
+  const uri = refNode.value.startsWith("#") ? "" : toAbsoluteIri(refNode.value);
+
+  const schemaNode = schemaRegistry.get(uri);
+  if (!schemaNode) {
+    throw Error(`Invalid reference: ${uri}`);
+  }
+
+  const referencedSchemaNode = jsonPointerGet(pointer, schemaNode, uri);
+
+  return validateSchema(referencedSchemaNode, instanceNode);
+});
