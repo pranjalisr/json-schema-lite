@@ -125,8 +125,8 @@ describe(draft, async () => {
             }
 
             test(schemaTest.description, () => {
-              const isValid = validate(suite.schema, schemaTest.data);
-              expect(isValid).to.equal(schemaTest.valid);
+              const output = validate(suite.schema, schemaTest.data);
+              expect(output.valid).to.equal(schemaTest.valid);
             });
           }
         });
