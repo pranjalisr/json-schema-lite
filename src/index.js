@@ -25,8 +25,18 @@ import {
 export const validate = (schema, instance) => {
   registerSchema(schema, "");
   const schemaNode = /** @type NonNullable<JsonNode> */ (schemaRegistry.get(""));
+
+  if (schemaNode.jsonType === "object" && jsonObjectHas("$schema", schemaNode)) {
+    const $schema = jsonPointerStep("$schema", schemaNode);
+    if ($schema.jsonType === "string" && $schema.value !== "https://json-schema.org/draft/2020-12/schema") {
+      throw Error(`Dialect '${$schema.value}' is not supported. Use 2020-12.`);
+    }
+  }
+
   const isValid = validateSchema(schemaNode, toJsonNode(instance));
+
   schemaRegistry.delete("");
+
   return isValid;
 };
 
