@@ -1,4 +1,4 @@
-import { resolveIri } from "@hyperjump/uri";
+import * as JsonPointer from "@hyperjump/json-pointer";
 
 /**
  * @import {
@@ -12,30 +12,35 @@ import { resolveIri } from "@hyperjump/uri";
  *   JsonObject,
  *   JsonObjectNode,
  *   JsonPropertyNode,
- *   JsonStringNode,
- *   SchemaNode,
- *   SchemaReferenceNode
+ *   JsonStringNode
  * } from "./jsonast.d.ts"
  */
 
 
-/** @type (json: Json) => JsonNode */
-export const toJsonNode = (json) => {
+/** @type (json: Json, uri?: string, pointer?: string) => JsonNode */
+export const toJsonNode = (json, uri = "", pointer = "") => {
   switch (typeof json) {
     case "boolean":
-      return { type: "json", jsonType: "boolean", value: json };
+      return { type: "json", jsonType: "boolean", value: json, location: `${uri}#${pointer}` };
     case "number":
-      return { type: "json", jsonType: "number", value: json };
+      return { type: "json", jsonType: "number", value: json, location: `${uri}#${pointer}` };
     case "string":
-      return { type: "json", jsonType: "string", value: json };
+      return { type: "json", jsonType: "string", value: json, location: `${uri}#${pointer}` };
     case "object":
       if (json === null) {
-        return { type: "json", jsonType: "null", value: json };
+        return { type: "json", jsonType: "null", value: json, location: `${uri}#${pointer}` };
       } else if (Array.isArray(json)) {
-        return { type: "json", jsonType: "array", children: json.map(toJsonNode) };
+        return {
+          type: "json",
+          jsonType: "array",
+          children: json.map((item, index) => {
+            return toJsonNode(item, uri, JsonPointer.append(`${index}`, pointer));
+          }),
+          location: `${uri}#${pointer}`
+        };
       } else {
         /** @type JsonObjectNode */
-        const objectNode = { type: "json", jsonType: "object", children: [] };
+        const objectNode = { type: "json", jsonType: "object", children: [], location: `${uri}#${pointer}` };
 
         for (const property in json) {
           /** @type JsonPropertyNode */
@@ -43,7 +48,7 @@ export const toJsonNode = (json) => {
             type: "json-property",
             children: [
               { type: "json-property-name", value: property },
-              toJsonNode(json[property])
+              toJsonNode(json[property], uri, JsonPointer.append(property, pointer))
             ]
           };
           objectNode.children.push(propertyNode);
@@ -54,83 +59,40 @@ export const toJsonNode = (json) => {
   }
 };
 
-/** @type (json: Json, uri: string) => SchemaNode */
-export const toSchemaNode = (json, uri) => {
-  switch (typeof json) {
-    case "boolean":
-      return { type: "json", jsonType: "boolean", value: json };
-    case "number":
-      return { type: "json", jsonType: "number", value: json };
-    case "string":
-      return { type: "json", jsonType: "string", value: json };
-    case "object":
-      if (json === null) {
-        return { type: "json", jsonType: "null", value: json };
-      } else if (Array.isArray(json)) {
-        return {
-          type: "json",
-          jsonType: "array",
-          children: json.map((item) => toSchemaNode(item, uri))
-        };
-      } else {
-        /** @type JsonObjectNode<SchemaNode> */
-        const objectNode = { type: "json", jsonType: "object", children: [] };
-
-        for (const property in json) {
-          /** @type JsonPropertyNode<SchemaNode> */
-          const propertyNode = {
-            type: "json-property",
-            children: [
-              { type: "json-property-name", value: property },
-              property !== "$ref" || typeof json[property] !== "string" ? toSchemaNode(json[property], uri) : {
-                type: "json-schema-reference",
-                value: uri ? resolveIri(json[property], uri) : json[property]
-              }
-            ]
-          };
-          objectNode.children.push(propertyNode);
-        }
-
-        return objectNode;
-      }
-  }
-};
-
-/** @type (segment: string, node: SchemaNode, uri?: string) => SchemaNode */
+/** @type (segment: string, node: JsonNode, uri?: string) => JsonNode */
 export const jsonPointerStep = (segment, node, uri = "#") => {
-  if (node.type === "json") {
-    switch (node.jsonType) {
-      case "object": {
-        for (const propertyNode of node.children) {
-          if (propertyNode.children[0].value === segment) {
-            return propertyNode.children[1];
-          }
+  switch (node.jsonType) {
+    case "object": {
+      for (const propertyNode of node.children) {
+        if (propertyNode.children[0].value === segment) {
+          return propertyNode.children[1];
         }
+      }
+      const uriMessage = uri ? ` at ${uri}` : "";
+      throw new Error(`Property '${segment}' doesn't exist${uriMessage}`);
+    }
+    case "array": {
+      const index = segment === "-" ? node.children.length : parseInt(segment);
+      if (!node.children[index]) {
         const uriMessage = uri ? ` at ${uri}` : "";
-        throw new Error(`Property '${segment}' doesn't exist${uriMessage}`);
+        throw new Error(`Index '${index}' doesn't exist${uriMessage}`);
       }
-      case "array": {
-        const index = segment === "-" ? node.children.length : parseInt(segment);
-        if (!node.children[index]) {
-          const uriMessage = uri ? ` at ${uri}` : "";
-          throw new Error(`Index '${index}' doesn't exist${uriMessage}`);
-        }
-        return node.children[index];
-      }
+      return node.children[index];
+    }
+    default: {
+      const uriMessage = uri ? ` at ${uri}` : "";
+      throw new Error(`Can't index into scalar value${uriMessage}`);
     }
   }
-
-  const uriMessage = uri ? ` at ${uri}` : "";
-  throw new Error(`Can't index into scalar value${uriMessage}`);
 };
 
-/** @type (pointer: string, tree: SchemaNode, documentUri?: string) => SchemaNode */
-export const jsonPointerGet = (pointer, tree, documentUri) => {
+/** @type (pointer: string, tree: JsonNode, uri?: string) => JsonNode */
+export const jsonPointerGet = (pointer, tree, uri) => {
   let currentPointer = "";
   let node = tree;
   for (const segment of pointerSegments(pointer)) {
     currentPointer += "/" + escapePointerSegment(segment);
-    node = jsonPointerStep(segment, node, `${documentUri}#${currentPointer}`);
+    node = jsonPointerStep(segment, node, `${uri}#${currentPointer}`);
   }
 
   return node;
@@ -161,7 +123,7 @@ const unescapePointerSegment = (segment) => segment.toString().replace(/~1/g, "/
 /** @type (segment: string) => string */
 const escapePointerSegment = (segment) => segment.toString().replace(/~/g, "~0").replace(/\//g, "~1");
 
-/** @type <T>(key: string, node: JsonObjectNode<T>) => boolean */
+/** @type (key: string, node: JsonObjectNode) => boolean */
 export const jsonObjectHas = (key, node) => {
   for (const property of node.children) {
     if (property.children[0].value === key) {
@@ -172,18 +134,18 @@ export const jsonObjectHas = (key, node) => {
   return false;
 };
 
-/** @type <T>(node: JsonObjectNode<T>) => string[] */
+/** @type (node: JsonObjectNode) => string[] */
 export const jsonObjectKeys = (node) => {
   return node.children.map((propertyNode) => propertyNode.children[0].value);
 };
 
 /**
  * @overload
- * @param {JsonObjectNode<any>} node
+ * @param {JsonObjectNode} node
  * @returns {JsonObject}
  *
  * @overload
- * @param {JsonArrayNode<any>} node
+ * @param {JsonArrayNode} node
  * @returns {JsonArray}
  *
  * @overload
@@ -203,17 +165,13 @@ export const jsonObjectKeys = (node) => {
  * @returns {null}
  *
  * @overload
- * @param {SchemaNode} node
+ * @param {JsonNode} node
  * @returns {Json}
  *
- * @param {SchemaNode} node
+ * @param {JsonNode} node
  * @returns {Json}
  */
 export const jsonValue = (node) => {
-  if (node.type === "json-schema-reference") {
-    return node.value;
-  }
-
   switch (node.jsonType) {
     case "object":
       /** @type JsonObject */
@@ -235,114 +193,46 @@ export const jsonValue = (node) => {
 
 /**
  * @overload
- * @param {SchemaNode} node
+ * @param {JsonNode} node
  * @param {"object"} type
- * @returns {node is JsonObjectNode<SchemaNode>}
+ * @returns {asserts node is JsonObjectNode}
  *
  * @overload
- * @param {SchemaNode} node
+ * @param {JsonNode} node
  * @param {"array"} type
- * @returns {node is JsonArrayNode<SchemaNode>}
+ * @returns {asserts node is JsonArrayNode}
  *
  * @overload
- * @param {SchemaNode} node
- * @param {"string"} type
- * @returns {node is JsonStringNode}
- *
- * @overload
- * @param {SchemaNode} node
- * @param {"number"} type
- * @returns {node is JsonNumberNode}
- *
- * @overload
- * @param {SchemaNode} node
- * @param {"boolean"} type
- * @returns {node is JsonBooleanNode}
- *
- * @overload
- * @param {SchemaNode} node
- * @param {"null"} type
- * @returns {node is JsonNullNode}
- *
- * @overload
- * @param {SchemaNode} node
- * @param {"reference"} type
- * @returns {node is SchemaReferenceNode}
- *
- * @overload
- * @param {SchemaNode} node
- * @param {string} type
- * @returns {node is SchemaNode}
- *
- * @param {SchemaNode} node
- * @param {string} type
- * @returns {boolean}
- */
-export const isNodeType = (node, type) => {
-  if (type === "reference") {
-    if (node.type === "json-schema-reference") {
-      return true;
-    }
-  } else if (node.type === "json") {
-    if (typeof type === "string") {
-      if (node.jsonType === type) {
-        return true;
-      }
-    } else if (type === undefined) {
-      return true;
-    }
-  }
-
-  return false;
-};
-
-/**
- * @overload
- * @param {SchemaNode} node
- * @param {"object"} type
- * @returns {asserts node is JsonObjectNode<SchemaNode>}
- *
- * @overload
- * @param {SchemaNode} node
- * @param {"array"} type
- * @returns {asserts node is JsonArrayNode<SchemaNode>}
- *
- * @overload
- * @param {SchemaNode} node
+ * @param {JsonNode} node
  * @param {"string"} type
  * @returns {asserts node is JsonStringNode}
  *
  * @overload
- * @param {SchemaNode} node
+ * @param {JsonNode} node
  * @param {"number"} type
  * @returns {asserts node is JsonNumberNode}
  *
  * @overload
- * @param {SchemaNode} node
+ * @param {JsonNode} node
  * @param {"boolean"} type
  * @returns {asserts node is JsonBooleanNode}
  *
  * @overload
- * @param {SchemaNode} node
+ * @param {JsonNode} node
  * @param {"null"} type
  * @returns {asserts node is JsonNullNode}
  *
  * @overload
- * @param {SchemaNode} node
- * @param {"reference"} type
- * @returns {asserts node is SchemaReferenceNode}
- *
- * @overload
- * @param {SchemaNode} node
+ * @param {JsonNode} node
  * @param {string} type
  * @returns {node is SchemaNode}
  *
- * @param {SchemaNode} node
+ * @param {JsonNode} node
  * @param {string} type
  * @returns {void}
  */
 export const assertNodeType = (node, type) => {
-  if (!isNodeType(node, type)) {
+  if (node.jsonType !== type) {
     throw Error("Invalid Schema");
   }
 };

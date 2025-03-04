@@ -1,15 +1,14 @@
 import jsonStringify from "json-stringify-deterministic";
-import { parseIriReference, toAbsoluteIri } from "@hyperjump/uri";
+import * as JsonPointer from "@hyperjump/json-pointer";
+import { parseIriReference, resolveIri, toAbsoluteIri } from "@hyperjump/uri";
 import {
   assertNodeType,
   toJsonNode,
-  isNodeType,
   jsonObjectHas,
   jsonObjectKeys,
   jsonPointerGet,
   jsonPointerStep,
-  jsonValue,
-  toSchemaNode
+  jsonValue
 } from "./jsonast-util.js";
 
 /**
@@ -17,8 +16,7 @@ import {
  *   Json,
  *   JsonNode,
  *   JsonObjectNode,
- *   JsonStringNode,
- *   SchemaNode
+ *   JsonStringNode
  * } from "./jsonast.d.ts"
  */
 
@@ -26,13 +24,13 @@ import {
 /** @type (schema: Json, instance: Json) => boolean */
 export const validate = (schema, instance) => {
   registerSchema(schema, "");
-  const schemaNode = /** @type NonNullable<SchemaNode> */ (schemaRegistry.get(""));
+  const schemaNode = /** @type NonNullable<JsonNode> */ (schemaRegistry.get(""));
   const isValid = validateSchema(schemaNode, toJsonNode(instance));
   schemaRegistry.delete("");
   return isValid;
 };
 
-/** @type (schemaNode: SchemaNode, instanceNode: JsonNode) => boolean */
+/** @type (schemaNode: JsonNode, instanceNode: JsonNode) => boolean */
 const validateSchema = (schemaNode, instanceNode) => {
   if (schemaNode.type === "json") {
     switch (schemaNode.jsonType) {
@@ -53,19 +51,19 @@ const validateSchema = (schemaNode, instanceNode) => {
   throw Error("Invalid Schema");
 };
 
-/** @type Map<string, SchemaNode> */
+/** @type Map<string, JsonNode> */
 const schemaRegistry = new Map();
 
 /** @type (schema: Json, uri: string) => void */
 export const registerSchema = (schema, uri) => {
-  schemaRegistry.set(uri, toSchemaNode(schema, uri));
+  schemaRegistry.set(uri, toJsonNode(schema, uri));
 };
 
 /**
  * @typedef {(
- *   keywordNode: SchemaNode,
+ *   keywordNode: JsonNode,
  *   instanceNode: JsonNode,
- *   schemaNode: JsonObjectNode<SchemaNode>
+ *   schemaNode: JsonObjectNode
  * ) => boolean} KeywordHandler
  */
 
@@ -73,15 +71,18 @@ export const registerSchema = (schema, uri) => {
 const keywordHandlers = new Map();
 
 keywordHandlers.set("$ref", (refNode, instanceNode) => {
-  assertNodeType(refNode, "reference");
-  const pointer = decodeURI(parseIriReference(refNode.value).fragment ?? "");
-  const uri = refNode.value.startsWith("#") ? "" : toAbsoluteIri(refNode.value);
+  assertNodeType(refNode, "string");
+
+  const uri = refNode.location.startsWith("#")
+    ? refNode.value.startsWith("#") ? "" : toAbsoluteIri(refNode.value)
+    : toAbsoluteIri(resolveIri(refNode.value, toAbsoluteIri(refNode.location)));
 
   const schemaNode = schemaRegistry.get(uri);
   if (!schemaNode) {
     throw Error(`Invalid reference: ${uri}`);
   }
 
+  const pointer = decodeURI(parseIriReference(refNode.value).fragment ?? "");
   const referencedSchemaNode = jsonPointerGet(pointer, schemaNode, uri);
 
   return validateSchema(referencedSchemaNode, instanceNode);
@@ -96,7 +97,7 @@ keywordHandlers.set("additionalProperties", (additionalPropertiesNode, instanceN
 
   if (jsonObjectHas("properties", schemaNode)) {
     const propertiesNode = jsonPointerStep("properties", schemaNode);
-    if (isNodeType(propertiesNode, "object")) {
+    if (propertiesNode.jsonType === "object") {
       for (const propertyName of jsonObjectKeys(propertiesNode)) {
         propertyPatterns.push(`^${regexEscape(propertyName)}$`);
       }
@@ -105,7 +106,7 @@ keywordHandlers.set("additionalProperties", (additionalPropertiesNode, instanceN
 
   if (jsonObjectHas("patternProperties", schemaNode)) {
     const patternPropertiesNode = jsonPointerStep("patternProperties", schemaNode);
-    if (isNodeType(patternPropertiesNode, "object")) {
+    if (patternPropertiesNode.jsonType === "object") {
       propertyPatterns.push(...jsonObjectKeys(patternPropertiesNode));
     }
   }
@@ -171,7 +172,7 @@ keywordHandlers.set("contains", (containsNode, instanceNode, schemaNode) => {
   let minContains = 1;
   if (jsonObjectHas("minContains", schemaNode)) {
     const minContainsNode = jsonPointerStep("minContains", schemaNode);
-    if (isNodeType(minContainsNode, "number")) {
+    if (minContainsNode.jsonType === "number") {
       minContains = minContainsNode.value;
     }
   }
@@ -179,7 +180,7 @@ keywordHandlers.set("contains", (containsNode, instanceNode, schemaNode) => {
   let maxContains = Number.MAX_SAFE_INTEGER;
   if (jsonObjectHas("maxContains", schemaNode)) {
     const maxContainsNode = jsonPointerStep("maxContains", schemaNode);
-    if (isNodeType(maxContainsNode, "number")) {
+    if (maxContainsNode.jsonType === "number") {
       maxContains = maxContainsNode.value;
     }
   }
@@ -242,7 +243,7 @@ keywordHandlers.set("items", (itemsNode, instanceNode, schemaNode) => {
   let numberOfPrefixItems = 0;
   if (jsonObjectHas("prefixItems", schemaNode)) {
     const prefixItemsNode = jsonPointerStep("prefixItems", schemaNode);
-    if (isNodeType(prefixItemsNode, "array")) {
+    if (prefixItemsNode.jsonType === "array") {
       numberOfPrefixItems = prefixItemsNode.children.length;
     }
   }
@@ -321,7 +322,8 @@ keywordHandlers.set("propertyNames", (propertyNamesNode, instanceNode) => {
     const keyNode = {
       type: "json",
       jsonType: "string",
-      value: propertyNode.children[0].value
+      value: propertyNode.children[0].value,
+      location: JsonPointer.append(propertyNode.children[0].value, instanceNode.location)
     };
     if (!validateSchema(propertyNamesNode, keyNode)) {
       return false;

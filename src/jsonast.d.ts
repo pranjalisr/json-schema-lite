@@ -6,31 +6,35 @@ export type JsonNullNode = {
   type: "json";
   jsonType: "null";
   value: null;
+  location: string;
 };
 
 export type JsonBooleanNode = {
   type: "json";
   jsonType: "boolean";
   value: boolean;
+  location: string;
 };
 
 export type JsonNumberNode = {
   type: "json";
   jsonType: "number";
   value: number;
+  location: string;
 };
 
 export type JsonStringNode = {
   type: "json";
   jsonType: "string";
   value: string;
+  location: string;
 };
 
-// eslint-disable-next-line @typescript-eslint/consistent-type-definitions
-export interface JsonArrayNode<T = JsonNode> {
+export type JsonArrayNode = {
   type: "json";
   jsonType: "array";
-  children: T[];
+  children: JsonNode[];
+  location: string;
 };
 
 export type JsonPropertyNameNode = {
@@ -38,17 +42,16 @@ export type JsonPropertyNameNode = {
   value: string;
 };
 
-// eslint-disable-next-line @typescript-eslint/consistent-type-definitions
-export interface JsonPropertyNode<T = JsonNode> {
+export type JsonPropertyNode = {
   type: "json-property";
-  children: [JsonPropertyNameNode, T];
+  children: [JsonPropertyNameNode, JsonNode];
 };
 
-// eslint-disable-next-line @typescript-eslint/consistent-type-definitions
-export interface JsonObjectNode<T = JsonNode> {
+export type JsonObjectNode = {
   type: "json";
   jsonType: "object";
-  children: JsonPropertyNode<T>[];
+  children: JsonPropertyNode[];
+  location: string;
 };
 
 export type JsonNode = JsonObjectNode
@@ -57,16 +60,3 @@ export type JsonNode = JsonObjectNode
   | JsonNumberNode
   | JsonBooleanNode
   | JsonNullNode;
-
-export type SchemaReferenceNode = {
-  type: "json-schema-reference";
-  value: string;
-};
-
-export type SchemaNode = JsonObjectNode<SchemaNode>
-  | JsonArrayNode<SchemaNode>
-  | JsonStringNode
-  | JsonNumberNode
-  | JsonBooleanNode
-  | JsonNullNode
-  | SchemaReferenceNode;
