@@ -24,9 +24,14 @@ import { Output } from "./output.js";
 
 /** @type (schema: Json, instance: Json) => Output */
 export const validate = (schema, instance) => {
-  registerSchema(schema, "");
-  const schemaNode = /** @type NonNullable<JsonNode> */ (schemaRegistry.get(""));
+  // Determine schema identifier
+  const uri = typeof schema === "object" && schema !== null && !Array.isArray(schema)
+    && typeof schema.$id === "string" ? schema.$id : "";
+  registerSchema(schema, uri);
 
+  const schemaNode = /** @type NonNullable<JsonNode> */ (schemaRegistry.get(uri));
+
+  // Verify the dialect is supported
   if (schemaNode.jsonType === "object" && jsonObjectHas("$schema", schemaNode)) {
     const $schema = jsonPointerStep("$schema", schemaNode);
     if ($schema.jsonType === "string" && $schema.value !== "https://json-schema.org/draft/2020-12/schema") {
@@ -36,7 +41,7 @@ export const validate = (schema, instance) => {
 
   const output = validateSchema(schemaNode, toJsonNode(instance));
 
-  schemaRegistry.delete("");
+  schemaRegistry.delete(uri);
 
   return output;
 };
@@ -624,4 +629,32 @@ keywordHandlers.set("uniqueItems", (uniqueItemsNode, instanceNode) => {
   const normalizedItems = instanceNode.children.map((itemNode) => jsonStringify(jsonValue(itemNode)));
   const isValid = new Set(normalizedItems).size === normalizedItems.length;
   return new Output(isValid, uniqueItemsNode, instanceNode);
+});
+
+keywordHandlers.set("$id", (idNode, instanceNode, schemaNode) => {
+  if (!idNode.location.endsWith("#/$id")) {
+    throw Error(`Embedded schemas are not supported. Found at ${schemaNode.location}`);
+  }
+
+  return new Output(true, idNode, instanceNode);
+});
+
+keywordHandlers.set("$anchor", (anchorNode) => {
+  throw Error(`The '$anchor' keyword is not supported. Found at ${anchorNode.location}`);
+});
+
+keywordHandlers.set("$dynamicAnchor", (dynamicAnchorNode) => {
+  throw Error(`The '$dynamicAnchor' keyword is not supported. Found at ${dynamicAnchorNode.location}`);
+});
+
+keywordHandlers.set("$dynamicRef", (dynamicRefNode) => {
+  throw Error(`The '$dynamicRef' keyword is not supported. Found at ${dynamicRefNode.location}`);
+});
+
+keywordHandlers.set("unevaluatedProperties", (unevaluatedPropertiesNode) => {
+  throw Error(`The 'unevaluatedProperties' keyword is not supported. Found at ${unevaluatedPropertiesNode.location}`);
+});
+
+keywordHandlers.set("unevaluatedItems", (unevaluatedItemsNode) => {
+  throw Error(`The 'unevaluatedItems' keyword is not supported. Found at ${unevaluatedItemsNode.location}`);
 });
