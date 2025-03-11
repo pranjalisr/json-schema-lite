@@ -17,9 +17,10 @@ formats. You must include `valid`, `absoluteKeywordLocation`, and
 `instanceLocation`. Because we aren't implementing the Verbose output format,
 you don't need to support `annotations`/`annotation`. You don't need to support
 `error` because we're going to ignore messages from the implementation anyway.
-`keywordLocation` is optional because I can't see any reason we'd use it. You
-must include tests to show that your implementation works including coverage for
-all implemented keywords.
+`keywordLocation` is optional because I can't see any reason we'd use it. **You
+must include output format tests to show that your implementation works
+including coverage for all implemented keywords. This is in addition to the
+validation tests that I provided.**
 
 To submit your qualification task, use `npm pack` and DM it to me. I will
 provide one and only one review for each candidate, so make sure you're ready
