@@ -4,8 +4,8 @@
 
 This is a minimal implementation of JSON Schema 2020-12 with a couple of the
 more complex features left out. This implementation exists solely to facilitate
-the qualification task for the JSON Schema GSoC project [Better JSON Schema
-Errors](https://github.com/json-schema-org/community/issues/870) project. Do not
+the qualification task for the JSON Schema project [Better JSON Schema
+Errors] project. Do not
 use it in production. It will not be maintained or supported.
 
 ## Qualification Task
