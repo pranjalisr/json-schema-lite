@@ -1,3 +1,4 @@
+// @ts-ignore
 import * as JsonPointer from "@hyperjump/json-pointer";
 
 /**
